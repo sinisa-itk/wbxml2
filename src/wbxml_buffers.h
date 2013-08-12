@@ -59,6 +59,13 @@ typedef struct WBXMLBuffer_s WBXMLBuffer;
 
 /**
  * @brief Create a Buffer
+ * @param path The path to existing file with initial data for buffer or new file with this name will be created
+ * @return The newly created Buffer, or NULL if not enought memory
+ */
+WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_create_file(const char * path, const char * mode);
+
+/**
+ * @brief Create a Buffer
  * @param data The initial data for buffer
  * @param len Size of data
  * @param malloc_block Size of the initial malloc block (tune this parameter to avoid too many reallocations)
@@ -147,6 +154,29 @@ WBXML_DECLARE(void) wbxml_buffer_set_char(WBXMLBuffer *buff, WB_ULONG pos, WB_UT
  * @return Pointer to buffer data, or "" if buffer is NULL or empty
  */
 WBXML_DECLARE(WB_UTINY *) wbxml_buffer_get_cstr(WBXMLBuffer *buff);
+/**
+ * @brief Read entire buffer into string
+ * @param buff The Buffer
+ * @return Pointer to buffer data, or "" if buffer is NULL or empty
+ * @warning Use with caution, we don't want large data buffers to reside in RAM
+ */
+WBXML_DECLARE(WB_UTINY *) wbxml_buffer_get_entire_string(WBXMLBuffer *buff);
+/**
+ * @brief Create new memory buffer containing specified data chunk from this buffer.
+ * @pos Start position of new buffer.
+ * @len Length of data chunk to copy.
+ * @return Pointer to buffer data, or "" if buffer is empty.
+ * @warning Use with caution, we don't want large data buffers to reside in RAM
+ */
+WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_extract_memory_subbuffer(WBXMLBuffer *buff, WB_ULONG pos, WB_ULONG len);
+/**
+ * @brief Create new memory buffer containing specified data chunk from this buffer.
+ * @pos Start position of new buffer.
+ * @len Length of data chunk to copy.
+ * @return Pointer to buffer data, or "" if buffer is empty.
+ * @warning Use with caution, we don't want large data buffers to reside in RAM
+ */
+WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_extract_file_subbuffer(WBXMLBuffer *buff, WB_ULONG pos, WB_ULONG len, const char * path, const char * mode);
 
 /**
  * @brief Insert a Buffer into a dynamic Buffer
@@ -236,6 +266,7 @@ WBXML_DECLARE(void) wbxml_buffer_shrink_blanks(WBXMLBuffer *buff);
  */
 WBXML_DECLARE(void) wbxml_buffer_strip_blanks(WBXMLBuffer *buff);
 
+
 /**
  * @brief Compare two Buffers
  * @param buff1
@@ -243,6 +274,14 @@ WBXML_DECLARE(void) wbxml_buffer_strip_blanks(WBXMLBuffer *buff);
  * @return 0 if they are equal, negative if `buff1' is less than `buff2' and positive if greater
  */
 WBXML_DECLARE(WB_LONG) wbxml_buffer_compare(WBXMLBuffer *buff1, WBXMLBuffer *buff2);
+/**
+ * @brief Compare one buffer chunk with other buffer chunk
+ * @param buff1
+ * @param buff2
+ * @return TRUE if they are equal
+ */
+WBXML_DECLARE(WB_BOOL) wbxml_buffer_compare_chunk(WBXMLBuffer *buff1, WB_ULONG pos1, WBXMLBuffer *buff2, WB_ULONG pos2, WB_ULONG len);
+
 
 /**
  * @brief Compare a WBXML Buffer with a C String

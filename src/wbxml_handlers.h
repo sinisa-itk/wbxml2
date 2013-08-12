@@ -97,6 +97,31 @@ typedef void (*WBXMLCharactersHandler)(void *ctx, WB_UTINY *ch, WB_ULONG start, 
  */
 typedef void (*WBXMLProcessingInstructionHandler)(void *ctx, const WB_UTINY *target, WB_UTINY *data);
 
+
+
+/**
+ * @brief Characters handler
+ * @param ctx User data
+ * @param ch The characters
+ * @param start The start position in the array
+ * @param length The number of characters to read from the array
+ */
+typedef void (*WBXMLCharactersInFileHandler)(void *ctx, WBXMLBuffer * buffer, WB_ULONG start, WB_ULONG length);
+
+/**
+ * @brief Callback to specify new file names
+ * @param ctx User data
+ * @warning 
+ */
+typedef const char * (*WBXMLBufferFilenameProvider)(void *ctx);
+/**
+ * @brief Callback to free filename string memory from 'WBXMLBufferFilenameProvider specify_filename_clb'
+ * @param ctx User data
+ */
+typedef void (*WBXMLBufferFilenameProviderFree)(void *ctx, const char * allocated);
+
+
+
 /**
  * @brief WBXMLContentHandler structure
  */
@@ -107,6 +132,11 @@ typedef struct WBXMLContentHandler_s {
     WBXMLEndElementHandler end_element_clb;             /**< End Element handler */
     WBXMLCharactersHandler characters_clb;              /**< Characters handler */
     WBXMLProcessingInstructionHandler pi_clb;           /**< Processing Instruction Handler */
+
+	// Added for inspecting characters stored in file
+	WBXMLCharactersInFileHandler characters_in_buffer_clb; /**< Modified characters handler */
+	WBXMLBufferFilenameProvider     specify_filename_clb;  /**<  */
+	WBXMLBufferFilenameProviderFree free_filename_clb;     /**<  */
 } WBXMLContentHandler;
 
 /** @} */

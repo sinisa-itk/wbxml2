@@ -63,7 +63,11 @@ WBXML_DECLARE(WBXMLError) wbxml_tree_from_wbxml(WB_UTINY *wbxml,
             wbxml_tree_clb_wbxml_start_element,
             wbxml_tree_clb_wbxml_end_element,
             wbxml_tree_clb_wbxml_characters,
-            wbxml_tree_clb_wbxml_pi
+            wbxml_tree_clb_wbxml_pi,
+
+			NULL, // characters_in_buffer_clb 
+			NULL, // specify_filename_clb
+			NULL  // free_filename_clb
         };
 
     if (tree != NULL)

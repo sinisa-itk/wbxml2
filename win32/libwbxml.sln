@@ -1,0 +1,53 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libwbxml2", "libwbxml2\libwbxml2.vcxproj", "{3CD69024-1AF3-C156-31E9-5038C03B2B07}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "wbxml2xml", "wbxml2xml\wbxml2xml.vcxproj", "{0A224F51-85E0-462E-1C5A-5076F2B689E2}"
+	ProjectSection(ProjectDependencies) = postProject
+		{3CD69024-1AF3-C156-31E9-5038C03B2B07} = {3CD69024-1AF3-C156-31E9-5038C03B2B07}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "xml2wbxml", "xml2wbxml\xml2wbxml.vcxproj", "{69FE45B5-D46C-7DFE-17E1-D1E65615346E}"
+	ProjectSection(ProjectDependencies) = postProject
+		{3CD69024-1AF3-C156-31E9-5038C03B2B07} = {3CD69024-1AF3-C156-31E9-5038C03B2B07}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "serial_parser", "serial_parser\serial_parser.vcxproj", "{EF6E7A89-9520-461A-ABDA-E1988911E31B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+		Template|Win32 = Template|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3CD69024-1AF3-C156-31E9-5038C03B2B07}.Debug|Win32.ActiveCfg = Debug|Win32
+		{3CD69024-1AF3-C156-31E9-5038C03B2B07}.Debug|Win32.Build.0 = Debug|Win32
+		{3CD69024-1AF3-C156-31E9-5038C03B2B07}.Release|Win32.ActiveCfg = Release|Win32
+		{3CD69024-1AF3-C156-31E9-5038C03B2B07}.Release|Win32.Build.0 = Release|Win32
+		{3CD69024-1AF3-C156-31E9-5038C03B2B07}.Template|Win32.ActiveCfg = Release|Win32
+		{3CD69024-1AF3-C156-31E9-5038C03B2B07}.Template|Win32.Build.0 = Release|Win32
+		{0A224F51-85E0-462E-1C5A-5076F2B689E2}.Debug|Win32.ActiveCfg = Debug|Win32
+		{0A224F51-85E0-462E-1C5A-5076F2B689E2}.Debug|Win32.Build.0 = Debug|Win32
+		{0A224F51-85E0-462E-1C5A-5076F2B689E2}.Release|Win32.ActiveCfg = Release|Win32
+		{0A224F51-85E0-462E-1C5A-5076F2B689E2}.Release|Win32.Build.0 = Release|Win32
+		{0A224F51-85E0-462E-1C5A-5076F2B689E2}.Template|Win32.ActiveCfg = Template|Win32
+		{0A224F51-85E0-462E-1C5A-5076F2B689E2}.Template|Win32.Build.0 = Template|Win32
+		{69FE45B5-D46C-7DFE-17E1-D1E65615346E}.Debug|Win32.ActiveCfg = Debug|Win32
+		{69FE45B5-D46C-7DFE-17E1-D1E65615346E}.Debug|Win32.Build.0 = Debug|Win32
+		{69FE45B5-D46C-7DFE-17E1-D1E65615346E}.Release|Win32.ActiveCfg = Release|Win32
+		{69FE45B5-D46C-7DFE-17E1-D1E65615346E}.Release|Win32.Build.0 = Release|Win32
+		{69FE45B5-D46C-7DFE-17E1-D1E65615346E}.Template|Win32.ActiveCfg = Template|Win32
+		{69FE45B5-D46C-7DFE-17E1-D1E65615346E}.Template|Win32.Build.0 = Template|Win32
+		{EF6E7A89-9520-461A-ABDA-E1988911E31B}.Debug|Win32.ActiveCfg = Debug|Win32
+		{EF6E7A89-9520-461A-ABDA-E1988911E31B}.Debug|Win32.Build.0 = Debug|Win32
+		{EF6E7A89-9520-461A-ABDA-E1988911E31B}.Release|Win32.ActiveCfg = Release|Win32
+		{EF6E7A89-9520-461A-ABDA-E1988911E31B}.Release|Win32.Build.0 = Release|Win32
+		{EF6E7A89-9520-461A-ABDA-E1988911E31B}.Template|Win32.ActiveCfg = Release|Win32
+		{EF6E7A89-9520-461A-ABDA-E1988911E31B}.Template|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

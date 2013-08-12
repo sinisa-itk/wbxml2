@@ -77,6 +77,7 @@ WBXML_DECLARE(void) wbxml_parser_destroy(WBXMLParser *parser);
  * @brief Return WBXML_OK if no error, an error code otherwise
  */
 WBXML_DECLARE(WBXMLError) wbxml_parser_parse(WBXMLParser *parser, WB_UTINY *wbxml, WB_ULONG wbxml_len);
+WBXML_DECLARE(WBXMLError) wbxml_parser_parse_file(WBXMLParser *parser, const char * input_file_path);
 
 /**
  * @brief Set User Data for a WBXML Parser

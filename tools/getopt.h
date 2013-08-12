@@ -9,7 +9,7 @@
 #ifndef WBXML_GETOPT_H
 #define WBXML_GETOPT_H
 
-#include "tools/config.h"
+//#include "tools/config.h"
 
 #ifdef FOUND_POSIX_GETOPT
 

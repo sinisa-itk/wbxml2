@@ -224,25 +224,10 @@ WBXML_DECLARE(void) wbxml_parser_destroy(WBXMLParser *parser)
     wbxml_free(parser);
 }
 
+WBXML_DECLARE(WBXMLError) _wbxml_parser_parse(WBXMLParser *parser) {
+	WBXMLError ret = WBXML_OK;
 
-WBXML_DECLARE(WBXMLError) wbxml_parser_parse(WBXMLParser *parser, WB_UTINY *wbxml, WB_ULONG wbxml_len)
-{
-    WBXMLError ret = WBXML_OK;
-
-    if (parser == NULL)
-        return WBXML_ERROR_NULL_PARSER;
-
-    if ((wbxml == NULL) || (wbxml_len <= 0))
-        return WBXML_ERROR_EMPTY_WBXML;
-
-    /* Reinitialize WBXML Parser */
-    wbxml_parser_reinit(parser);
-
-    parser->wbxml = wbxml_buffer_create(wbxml, wbxml_len, WBXML_PARSER_MALLOC_BLOCK);
-    if (parser->wbxml == NULL)
-        return WBXML_ERROR_NOT_ENOUGH_MEMORY;
-
-    /* WBXML Version */
+	/* WBXML Version */
     ret = parse_version(parser);
     CHECK_ERROR
 
@@ -307,6 +292,24 @@ WBXML_DECLARE(WBXMLError) wbxml_parser_parse(WBXMLParser *parser, WB_UTINY *wbxm
         parser->content_hdl->end_document_clb(parser->user_data);
 
     return ret;
+}
+WBXML_DECLARE(WBXMLError) wbxml_parser_parse_file(WBXMLParser *parser, const char * input_file_path) {
+	if (parser == NULL) return WBXML_ERROR_NULL_PARSER;
+	// Reinitialize WBXML Parser
+	wbxml_parser_reinit(parser);
+	parser->wbxml = wbxml_buffer_create_file(input_file_path, "r+b");
+	if (parser->wbxml == NULL) return WBXML_ERROR_NOT_ENOUGH_MEMORY;
+	return _wbxml_parser_parse(parser);
+}
+WBXML_DECLARE(WBXMLError) wbxml_parser_parse(WBXMLParser *parser, WB_UTINY *wbxml, WB_ULONG wbxml_len)
+{
+    if (parser == NULL) return WBXML_ERROR_NULL_PARSER;
+    if ((wbxml == NULL) || (wbxml_len <= 0)) return WBXML_ERROR_EMPTY_WBXML;
+    // Reinitialize WBXML Parser
+    wbxml_parser_reinit(parser);
+    parser->wbxml = wbxml_buffer_create(wbxml, wbxml_len, WBXML_PARSER_MALLOC_BLOCK);
+    if (parser->wbxml == NULL) return WBXML_ERROR_NOT_ENOUGH_MEMORY;
+	return _wbxml_parser_parse(parser);
 }
 
 
@@ -615,13 +618,15 @@ static WB_BOOL check_public_id(WBXMLParser *parser)
             return FALSE;
         }
 
-        WBXML_DEBUG((WBXML_PARSER, "\t  PublicID : '%s'", wbxml_buffer_get_cstr(public_id)));
+		//WBXML_DEBUG((WBXML_PARSER, "\t  PublicID : '%s'", wbxml_buffer_get_cstr(public_id)));
+        WBXML_DEBUG((WBXML_PARSER, "\t  PublicID : '%s'", wbxml_buffer_get_entire_string(public_id)));
 
         /* Search Public ID Table */
         while (parser->mainTable[index].publicID != NULL)
         {
             if ((parser->mainTable[index].publicID->xmlPublicID != NULL) && 
-                (WBXML_STRCASECMP(parser->mainTable[index].publicID->xmlPublicID, wbxml_buffer_get_cstr(public_id)) == 0))
+				//(WBXML_STRCASECMP(parser->mainTable[index].publicID->xmlPublicID, wbxml_buffer_get_cstr(public_id)) == 0))
+                (WBXML_STRCASECMP(parser->mainTable[index].publicID->xmlPublicID, wbxml_buffer_get_entire_string(public_id)) == 0))
             {
                 parser->langTable = &(parser->mainTable[index]);
                 /* parser->public_id = parser->mainTable[index].publicID->wbxmlPublicID; */
@@ -792,8 +797,9 @@ static WBXMLError parse_strtbl(WBXMLParser *parser)
             return WBXML_ERROR_STRTBL_LENGTH;
 
         /* Get String Table */
-        data = wbxml_buffer_get_cstr(parser->wbxml);
-        parser->strstbl = wbxml_buffer_create(data + parser->pos, strtbl_len, WBXML_PARSER_STRING_TABLE_MALLOC_BLOCK);
+        //  //  data = wbxml_buffer_get_cstr(parser->wbxml);
+        //  //  parser->strstbl = wbxml_buffer_create(data + parser->pos, strtbl_len, WBXML_PARSER_STRING_TABLE_MALLOC_BLOCK);
+		parser->strstbl = wbxml_buffer_extract_memory_subbuffer(parser->wbxml, parser->pos, strtbl_len);
         if (parser->strstbl == NULL)
             return WBXML_ERROR_NOT_ENOUGH_MEMORY;
 
@@ -955,7 +961,8 @@ static WBXMLError parse_pi(WBXMLParser *parser)
     {
         parser->content_hdl->pi_clb(parser->user_data,
                                     wbxml_attribute_name_get_xml_name(attr_name),
-                                    wbxml_buffer_get_cstr(attr_value));
+									// // wbxml_buffer_get_cstr(attr_value));
+                                    wbxml_buffer_get_entire_string(attr_value));
     }
         
     wbxml_attribute_name_destroy(attr_name);
@@ -1068,13 +1075,24 @@ static WBXMLError parse_element(WBXMLParser *parser)
             /* Callback WBXMLCharactersHandler if content is not NULL */
             if ((content != NULL) &&
                 (wbxml_buffer_len(content) != 0) &&
-                (parser->content_hdl != NULL) &&
-                (parser->content_hdl->characters_clb != NULL))
-            {
-                parser->content_hdl->characters_clb(parser->user_data,
-                                                    wbxml_buffer_get_cstr(content),
-                                                    0,
-                                                    wbxml_buffer_len(content));
+                (parser->content_hdl != NULL) )
+			{
+                if(parser->content_hdl->characters_clb != NULL) {
+					parser->content_hdl->characters_clb(parser->user_data,
+						// // wbxml_buffer_get_cstr(content),
+                        wbxml_buffer_get_entire_string(content),
+                        0,
+                        wbxml_buffer_len(content)
+						);
+				}
+				if(parser->content_hdl->characters_in_buffer_clb != NULL) {
+					parser->content_hdl->characters_in_buffer_clb(
+						parser->user_data,
+						content,
+						0,
+						wbxml_buffer_len(content)
+						);
+				}
             }
           
             /* Free content */
@@ -1178,7 +1196,7 @@ static WBXMLError parse_stag(WBXMLParser *parser, WB_UTINY *tag, WBXMLTag **elem
         }
     
         /* Create Element Tag */
-        if ((*element = wbxml_tag_create_literal(wbxml_buffer_get_cstr(name))) == NULL) {
+        if ((*element = wbxml_tag_create_literal(wbxml_buffer_get_entire_string(name))) == NULL) {
             ret = WBXML_ERROR_NOT_ENOUGH_MEMORY;
         }
 
@@ -1595,7 +1613,8 @@ static WBXMLError parse_extension(WBXMLParser *parser, WBXMLTokenType code_space
         len += WBXML_STRLEN(var_begin);
     
         /* Generate 'variable' */
-        memcpy(ext + len, wbxml_buffer_get_cstr(var_value), wbxml_buffer_len(var_value));
+		// // memcpy(ext + len, wbxml_buffer_get_cstr(var_value), wbxml_buffer_len(var_value));
+        memcpy(ext + len, wbxml_buffer_get_entire_string(var_value), wbxml_buffer_len(var_value));
         len += wbxml_buffer_len(var_value);
 
         /* Destroy 'variable' */
@@ -1811,7 +1830,16 @@ static WBXMLError parse_opaque(WBXMLParser *parser, WBXMLBuffer **result)
      * Create result buffer (don't create a static buffer, because this can be
      * modified while trying to decode this content)
      */
-    *result = wbxml_buffer_create(wbxml_buffer_get_cstr(parser->wbxml) + parser->pos, len, len);
+	// // *result = wbxml_buffer_create(wbxml_buffer_get_cstr(parser->wbxml) + parser->pos, len, len);
+	if(parser->content_hdl->specify_filename_clb != NULL) {
+		const char * path = parser->content_hdl->specify_filename_clb(parser->user_data);
+		*result = wbxml_buffer_extract_file_subbuffer(parser->wbxml, parser->pos, len, path, "w+b");
+		if(parser->content_hdl->free_filename_clb != NULL) {
+			parser->content_hdl->free_filename_clb(parser->user_data, path);
+		}
+	} else {
+		*result = wbxml_buffer_extract_memory_subbuffer(parser->wbxml, parser->pos, len);
+	}
     if (*result == NULL) {
         return WBXML_ERROR_NOT_ENOUGH_MEMORY;
     }
@@ -1915,7 +1943,8 @@ static WBXMLError parse_attr_start(WBXMLParser         *parser,
             return ret;
         }
     
-        if ((*name = wbxml_attribute_name_create_literal(wbxml_buffer_get_cstr(literal_str))) == NULL) {
+		// // if ((*name = wbxml_attribute_name_create_literal(wbxml_buffer_get_cstr(literal_str))) == NULL) {
+        if ((*name = wbxml_attribute_name_create_literal(wbxml_buffer_get_entire_string(literal_str))) == NULL) {
             ret = WBXML_ERROR_NOT_ENOUGH_MEMORY;
         }
     
@@ -2080,6 +2109,33 @@ static WBXMLError parse_attr_value(WBXMLParser  *parser,
 }
 
 
+static const int SEARCH_BUFFER_SIZE = 4096;
+WB_ULONG _find_null_terminated_string_len(WBXMLBuffer * input, WB_ULONG pos, WBXMLCharsetMIBEnum charset) {
+	int           terminator_size = 1;
+	WBXMLBuffer * terminator;
+	WB_BOOL       status;
+	WB_ULONG      terminator_pos = 0;
+
+	if(charset == WBXML_CHARSET_ISO_10646_UCS_2 || charset == WBXML_CHARSET_UTF_16) {
+		// Terminated by two NULL char ("\0\0")
+		terminator_size = 2;
+	} else {
+		// Terminated by a simple NULL char ('\0')
+		terminator_size = 1;
+	}
+	terminator = wbxml_buffer_sta_create("\0\0", terminator_size);
+
+	status = wbxml_buffer_search(input, terminator, pos, &terminator_pos);
+	if(status == TRUE) {
+		// terminator_pos
+		return terminator_pos - pos + terminator_size;
+	} else {
+		// No terminating string
+		printf("\nERROR: _find_null_terminated_string_len::wbxml_buffer_search << FALSE \n");
+		return -1;
+	}
+}
+
 /**
  * @brief Parse WBXML termstr
  * @param parser [in]  The WBXML Parser
@@ -2090,28 +2146,46 @@ static WBXMLError parse_attr_value(WBXMLParser  *parser,
 static WBXMLError parse_termstr(WBXMLParser  *parser,
                                 WBXMLBuffer **result)
 {
-    WB_ULONG   max_len  = 0;
+    WB_ULONG   string_len  = 0;
     WBXMLError ret      = WBXML_OK;
   
-    WBXML_DEBUG((WBXML_PARSER, "(%d) Parsing termstr", parser->pos));
+	string_len = _find_null_terminated_string_len(parser->wbxml, parser->pos, parser->charset);
+	WBXML_DEBUG((WBXML_PARSER, "(%d) Parsing termstr len:%d ", parser->pos, string_len));
+	if(string_len == -1) {
+		return WBXML_ERROR_CHARSET_STR_LEN;
+	}
+	if(parser->content_hdl->specify_filename_clb != NULL) {
+		const char * path = parser->content_hdl->specify_filename_clb(parser->user_data);
+		*result = wbxml_buffer_extract_file_subbuffer(parser->wbxml, parser->pos, string_len, path, "w+b");
+		if(parser->content_hdl->free_filename_clb != NULL) {
+			parser->content_hdl->free_filename_clb(parser->user_data, path);
+		}
+	} else {
+		*result = wbxml_buffer_extract_memory_subbuffer(parser->wbxml, parser->pos, string_len);
+	}
+	parser->pos += string_len;
+	if (*result == NULL) {
+		return WBXML_ERROR_NOT_ENOUGH_MEMORY;
+	}
+	return WBXML_OK;
 
-    /* Get max possible string length */
-    max_len = wbxml_buffer_len(parser->wbxml) - parser->pos;
-  
-    /* Convert to UTF-8 Buffer */
-    if ((ret = wbxml_charset_conv_term((const WB_TINY *) (wbxml_buffer_get_cstr(parser->wbxml) + parser->pos),
-                                       &max_len,
-                                       parser->charset,
-                                       result,
-                                       WBXML_CHARSET_UTF_8)) != WBXML_OK) {
-        return ret;
-    }
-
-    parser->pos += max_len;
-  
-    WBXML_DEBUG((WBXML_PARSER, "(%d) termstr: %s", parser->pos, wbxml_buffer_get_cstr(*result)));
-  
-    return WBXML_OK;
+// //     /* Get max possible string length */
+// //     max_len = wbxml_buffer_len(parser->wbxml) - parser->pos;
+// //   
+// //     /* Convert to UTF-8 Buffer */
+// //     if ((ret = wbxml_charset_conv_term((const WB_TINY *) (wbxml_buffer_get_cstr(parser->wbxml) + parser->pos),
+// //                                        &max_len,
+// //                                        parser->charset,
+// //                                        result,
+// //                                        WBXML_CHARSET_UTF_8)) != WBXML_OK) {
+// //         return ret;
+// //     }
+// // 
+// //     parser->pos += max_len;
+// //   
+// //     WBXML_DEBUG((WBXML_PARSER, "(%d) termstr: %s", parser->pos, wbxml_buffer_get_cstr(*result)));
+// //   
+// //     return WBXML_OK;
 }
 
 
@@ -2189,7 +2263,8 @@ static WBXMLError get_strtbl_reference(WBXMLParser  *parser,
                                        WB_ULONG      index,
                                        WBXMLBuffer **result)
 {
-    WB_ULONG   max_len = 0;
+	WB_ULONG   string_len  = 0;
+    //WB_ULONG   max_len = 0;
     WBXMLError ret     = WBXML_OK;
 
     /* WORKAROUND: 2011-Jan-21 Michael Bell
@@ -2227,21 +2302,41 @@ static WBXMLError get_strtbl_reference(WBXMLParser  *parser,
         return WBXML_ERROR_INVALID_STRTBL_INDEX;
     }
 
-    /* Get max possible string length */
-    max_len = wbxml_buffer_len(parser->strstbl) - index;
+	string_len = _find_null_terminated_string_len(parser->strstbl, index, parser->charset);
+	WBXML_DEBUG((WBXML_PARSER, "(%d) String Table Reference:%d ", parser->pos, index));
+	if(string_len == -1) {
+		return WBXML_ERROR_CHARSET_STR_LEN;
+	}
+	if(parser->content_hdl->specify_filename_clb != NULL) {
+		const char * path = parser->content_hdl->specify_filename_clb(parser->user_data);
+		*result = wbxml_buffer_extract_file_subbuffer(parser->strstbl, index, string_len, path, "w+b");
+		if(parser->content_hdl->free_filename_clb != NULL) {
+			parser->content_hdl->free_filename_clb(parser->user_data, path);
+		}
+	} else {
+		*result = wbxml_buffer_extract_memory_subbuffer(parser->strstbl, index, string_len);
+	}
+	parser->pos += string_len;
+	if (*result == NULL) {
+		return WBXML_ERROR_NOT_ENOUGH_MEMORY;
+	}
+	return WBXML_OK;
 
-    /* Convert to UTF-8 Buffer */
-    if ((ret = wbxml_charset_conv_term((const WB_TINY *) (wbxml_buffer_get_cstr(parser->strstbl) + index),
-                                       &max_len,
-                                       parser->charset,
-                                       result,
-                                       WBXML_CHARSET_UTF_8)) != WBXML_OK) {
-        return ret;
-    }
-
-    WBXML_DEBUG((WBXML_PARSER, "(%d) String Table Reference: %s", parser->pos, wbxml_buffer_get_cstr(*result)));
-
-    return WBXML_OK;
+// //    /* Get max possible string length */
+// //    max_len = wbxml_buffer_len(parser->strstbl) - index;
+// //
+// //    /* Convert to UTF-8 Buffer */
+// //    if ((ret = wbxml_charset_conv_term((const WB_TINY *) (wbxml_buffer_get_cstr(parser->strstbl) + index),
+// //                                       &max_len,
+// //                                       parser->charset,
+// //                                       result,
+// //                                       WBXML_CHARSET_UTF_8)) != WBXML_OK) {
+// //        return ret;
+// //    }
+// //
+// //    WBXML_DEBUG((WBXML_PARSER, "(%d) String Table Reference: %s", parser->pos, wbxml_buffer_get_cstr(*result)));
+// //
+// //    return WBXML_OK;
 }
 
 
@@ -2855,7 +2950,8 @@ static WBXMLError decode_wv_datetime(WBXMLBuffer **data)
         return WBXML_ERROR_WV_DATETIME_FORMAT;
 
 
-    data_ptr = wbxml_buffer_get_cstr(*data);
+	// // data_ptr = wbxml_buffer_get_cstr(*data);
+    data_ptr = wbxml_buffer_get_entire_string(*data);
   
     /* Get Year */
     the_value = (WB_ULONG) (((data_ptr[0] & 0x3F) << 6) + ((data_ptr[1] >> 2) & 0x3F));

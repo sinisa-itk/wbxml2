@@ -40,6 +40,10 @@
 
 #include "wbxml_buffers.h"
 #include "wbxml_base64.h"
+#include "stdio.h"
+
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
 
 
 /* Memory management define */
@@ -54,17 +58,60 @@ struct WBXMLBuffer_s
     WB_ULONG  len;              /**< Length of data in buffer */
     WB_ULONG  malloced;         /**< Length of buffer */
     WB_BOOL   is_static;        /**< Is it a static buffer ?  */
+
+	WB_BOOL   is_file;          // < Is the buffer data stored in file ?
+	// // WB_ULONG  file_len;			// this can be calculated ! Do we need this as cached value ???
+	FILE    * file;
+	WBXMLCharsetMIBEnum   charset; /**< Charset of contained data */
 };
 
 
 static WB_BOOL grow_buff(WBXMLBuffer *buffer, WB_ULONG size);
+static WB_BOOL reserve_buff_size(WBXMLBuffer *buffer, WB_ULONG size);
 static WB_BOOL insert_data(WBXMLBuffer *buffer, WB_ULONG pos, const WB_UTINY *data, WB_ULONG len);
-
+WBXML_DECLARE(WB_BOOL) wbxml_buffer_get_chunk(unsigned char * result, WBXMLBuffer *buf, WB_ULONG pos, WB_ULONG len);
+static WB_BOOL convert_to_memory_buffer(WBXMLBuffer *buffer);
 
 
 /**********************************
  *    Public functions
  */
+
+long int _file_size(FILE * file) {
+	long int pos = ftell(file), ret = 0;
+	int status = fseek(file, 0, SEEK_END);
+	if(status != 0) {
+		printf("\nError _file_size::fseek(file, 0, SEEK_END): %d \n", ferror(file));
+	} else {
+		ret = ftell(file);
+	}
+	fseek(file, pos, SEEK_SET);
+	return ret;
+}
+
+WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_create_file(const char * path, const char * mode) {
+	FILE * file = fopen(path, mode);
+	WBXMLBuffer *buffer = NULL;
+
+	if(file == NULL) return NULL;
+
+	buffer = (WBXMLBuffer *) wbxml_malloc(sizeof(WBXMLBuffer));
+	if (buffer == NULL) {
+		fclose(file);
+		return NULL;
+	}
+
+	buffer->is_static    = FALSE;
+	buffer->is_file      = TRUE;
+	buffer->file         = file;
+	buffer->malloced     = 0;
+	buffer->data         = NULL; // a big NO NO -> WBXML_UTINY_NULL_STRING;
+	// // buffer->file_len     = _file_size(file);
+	buffer->len          = 0;
+	buffer->charset      = WBXML_CHARSET_UNKNOWN;
+
+	return buffer;
+}
 
 
 WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_create_real(const WB_UTINY *data, WB_ULONG len, WB_ULONG malloc_block)
@@ -74,8 +121,12 @@ WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_create_real(const WB_UTINY *data, WB_U
     buffer = (WBXMLBuffer *) wbxml_malloc(sizeof(WBXMLBuffer));
     if (buffer == NULL)
         return NULL;
-        
+    
     buffer->is_static    = FALSE;
+	buffer->is_file      = FALSE;
+	buffer->file         = NULL;
+	// // buffer->file_len     = 0;
+	buffer->charset      = WBXML_CHARSET_UNKNOWN;
 
     if ((len <= 0) || (data == NULL)) {        
         buffer->malloced = 0;
@@ -115,6 +166,10 @@ WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_sta_create_real(const WB_UTINY *data, 
     buffer->is_static    = TRUE;
     buffer->data         = (WB_UTINY *) data;
     buffer->len          = len;
+	buffer->is_file      = FALSE;
+	buffer->file         = NULL;
+	// // buffer->file_len     = 0;
+	buffer->charset      = WBXML_CHARSET_UNKNOWN;
 
     return buffer;
 }
@@ -123,7 +178,14 @@ WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_sta_create_real(const WB_UTINY *data, 
 WBXML_DECLARE(void) wbxml_buffer_destroy(WBXMLBuffer *buffer)
 {
     if (buffer != NULL) {
-        if (!buffer->is_static) {
+		if(buffer->is_file) {
+			if(buffer->file != NULL) {
+				fclose(buffer->file);
+				buffer->file = NULL;
+			}
+			buffer->is_file = FALSE;
+		}
+		if (!buffer->is_static) {
             /* Free dynamic data */
             wbxml_free(buffer->data);
         }
@@ -159,18 +221,28 @@ WBXML_DECLARE(WB_ULONG) wbxml_buffer_len(WBXMLBuffer *buffer)
 {
     if (buffer == NULL)
         return 0;
-        
+    if (buffer->is_file == TRUE) {
+		return _file_size(buffer->file);
+	}
     return buffer->len;
 }
 
 
 WBXML_DECLARE(WB_BOOL) wbxml_buffer_get_char(WBXMLBuffer *buffer, WB_ULONG pos, WB_UTINY *result)
 {
-    if ((buffer == NULL) || (pos >= buffer->len))
+    if ((buffer == NULL) || (pos >= wbxml_buffer_len(buffer)))
         return FALSE;
-        
-    *result = buffer->data[pos];
-    return TRUE;
+    if(buffer->is_file == TRUE) {
+		int ret = 0;
+		if ( 0 != fseek(buffer->file, pos, SEEK_SET) ) return FALSE;
+		ret = fgetc(buffer->file);
+		if (ret == EOF) return FALSE;
+		*result = (WB_UTINY) ret;
+		return TRUE;
+	} else {
+		*result = buffer->data[pos];
+		return TRUE;
+	}
 }
 
 
@@ -187,6 +259,91 @@ WBXML_DECLARE(WB_UTINY *) wbxml_buffer_get_cstr(WBXMLBuffer *buffer)
         return WBXML_UTINY_NULL_STRING;
         
     return buffer->data;
+}
+WBXML_DECLARE(WB_UTINY *) wbxml_buffer_get_entire_string(WBXMLBuffer *buffer) {
+	if ((buffer == NULL) || ( wbxml_buffer_len(buffer) == 0))
+		return WBXML_UTINY_NULL_STRING;
+	if(buffer->is_file == TRUE) {
+		int bytes_read;
+
+		// read entire file into memory of this buffer
+		fseek(buffer->file, 0, SEEK_SET);
+		// // grow_buff(buffer, buffer->file_len +1);
+		// // int bytes_read = fread(buffer->data, 1, buffer->file_len, buffer->file);
+		reserve_buff_size(buffer, _file_size(buffer->file));
+		bytes_read = fread(buffer->data, 1, _file_size(buffer->file), buffer->file);
+		buffer->data[bytes_read] = 0; // terminate string
+	}
+	return buffer->data;
+}
+WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_extract_memory_subbuffer(WBXMLBuffer *buff, WB_ULONG pos, WB_ULONG len) {
+	WBXMLBuffer * ret;
+	WB_BOOL mem_success;
+
+	ret = wbxml_buffer_create_real(NULL, 0, 100);
+	if(ret == NULL) return NULL;
+
+	mem_success = reserve_buff_size(ret, len);
+	if(mem_success == FALSE) {
+		wbxml_buffer_destroy(ret);
+		return NULL;
+	}
+	if(buff->is_file) {
+		fseek(buff->file, pos, SEEK_SET);
+		fread(ret->data, 1, len, buff->file);
+	} else {
+		memcpy(ret->data, buff->data + pos, len);
+	}
+	ret->len = len;
+	return ret;
+}
+
+#define MOVE_BUFFER_SIZE    4096
+#define SEARCH_BUFFER_SIZE  4096
+#define COMPARE_BUFFER_SIZE 4096
+
+void file_data_copy(FILE * src, WB_ULONG src_pos, FILE * dst, WB_ULONG dst_pos, WB_ULONG len) {
+	WB_ULONG written = 0;
+	char move_buffer[MOVE_BUFFER_SIZE];
+	
+	fseek(src, src_pos, SEEK_SET);
+	fseek(dst, dst_pos, SEEK_SET);
+	
+	while(written < len) {
+		size_t bytes_read, bytes_written;
+		// copy loop 
+		int left = len - written;
+		int to_read = MIN(MOVE_BUFFER_SIZE, left);
+
+		// check for EOF
+		if(feof(src)) {
+			printf("\nERROR file_data_copy: EOF on pos:%d written:%d \n", src_pos + written, written);
+			return;
+		}
+
+		bytes_read = fread(move_buffer, 1, to_read, src);
+		bytes_written = fwrite(move_buffer, 1, bytes_read, dst);
+		if(bytes_read != to_read || bytes_written != bytes_read) {
+			printf("\nERROR file_data_copy: count mismatch seposed:%d read:%d written:%d pos:%d\n", to_read, bytes_read, bytes_written, written);
+		}
+		written += bytes_read;
+	}
+}
+WBXML_DECLARE(WBXMLBuffer *) wbxml_buffer_extract_file_subbuffer(WBXMLBuffer *buff, WB_ULONG pos, WB_ULONG len, const char * path, const char * mode) {
+	WBXMLBuffer * ret;
+	ret = wbxml_buffer_create_file(path, mode);
+	if(ret == NULL) return NULL;
+	if(buff->is_file == TRUE) {
+		// copy from file to file
+		file_data_copy(buff->file, pos, ret->file, 0, len);
+	} else {
+		// write from memory to file
+		int bytes_written = fwrite(buff->data + pos, 1, len, ret->file);
+		if(bytes_written != len) {
+			printf("\nError wbxml_buffer_extract_file_subbuffer(): bytes_written(%d) != len(%d)\n", bytes_written, len);
+		}
+	}
+	return ret;
 }
 
 
@@ -216,7 +373,26 @@ WBXML_DECLARE(WB_BOOL) wbxml_buffer_append(WBXMLBuffer *dest, WBXMLBuffer *buff)
     if (buff == NULL)
         return TRUE;
 
-    return wbxml_buffer_append_data(dest, wbxml_buffer_get_cstr(buff), wbxml_buffer_len(buff));
+	if(dest->is_file == TRUE || buff->is_file == TRUE) {
+		unsigned int len = wbxml_buffer_len(buff);
+		unsigned int processed_len = 0;
+		unsigned char chunk[MOVE_BUFFER_SIZE +1];
+
+		while (processed_len < len) {
+			int left = len - processed_len;
+			int chunksize_to_take = MIN(left, MOVE_BUFFER_SIZE);
+			if( FALSE == wbxml_buffer_get_chunk(chunk, buff, processed_len, chunksize_to_take) ) {
+				printf("\nERROR: wbxml_buffer_append::wbxml_buffer_get_chunk << FALSE\n");
+				return FALSE;
+			}
+			// append to dest buffer
+			if(wbxml_buffer_append_data_real(dest, chunk, chunksize_to_take) == FALSE) return FALSE;
+			processed_len += chunksize_to_take;
+		}
+		return TRUE;
+	} else {
+		return wbxml_buffer_append_data(dest, wbxml_buffer_get_cstr(buff), wbxml_buffer_len(buff));
+	}
 }
 
 
@@ -228,7 +404,18 @@ WBXML_DECLARE(WB_BOOL) wbxml_buffer_append_data_real(WBXMLBuffer *buffer, const 
     if ((data == NULL) || (len == 0))
         return TRUE;
 
-    return insert_data(buffer, buffer->len, data, len);
+	if(buffer->is_file) {
+		int bytes_written = 0;
+		fseek(buffer->file, 0, SEEK_END);
+		bytes_written = fwrite((void*) data, 1, len, buffer->file);
+		if(bytes_written != len) {
+			printf("\nERROR: wbxml_buffer_append_data_real::fwrite << %d instead %d \n", bytes_written, len);
+			return FALSE;
+		}
+		return TRUE;
+	} else {
+		return insert_data(buffer, buffer->len, data, len);
+	}
 }
 
 WBXML_DECLARE(WB_BOOL) wbxml_buffer_append_cstr_real(WBXMLBuffer *buffer, const WB_UTINY *data)
@@ -250,8 +437,13 @@ WBXML_DECLARE(WB_BOOL) wbxml_buffer_append_char(WBXMLBuffer *buffer, WB_UTINY ch
 
     if ((buffer == NULL) || buffer->is_static)
         return FALSE;
-
-    return insert_data(buffer, buffer->len, &c, 1);
+	if(buffer->is_file == TRUE) {
+		fseek(buffer->file, 0, SEEK_END);
+		fputc(ch, buffer->file);
+		return WBXML_OK;
+	} else {
+		return insert_data(buffer, buffer->len, &c, 1);
+	}
 }
 
 
@@ -427,6 +619,73 @@ WBXML_DECLARE(WB_LONG) wbxml_buffer_compare(WBXMLBuffer *buff1, WBXMLBuffer *buf
 }
 
 
+WBXML_DECLARE(WB_BOOL) wbxml_buffer_get_chunk(unsigned char * result, WBXMLBuffer *buf, WB_ULONG pos, WB_ULONG len) {
+	if( wbxml_buffer_len(buf) - pos < len ) return FALSE;
+	if(buf->is_file) {
+		size_t bytes_read;
+		
+		fseek(buf->file, pos, SEEK_SET);
+		bytes_read = fread(result, 1, len, buf->file);
+		if(bytes_read != len) return FALSE;
+		return TRUE;
+	} else {
+		memcpy(result, buf->data + pos, len);
+		return TRUE;
+	}
+}
+WB_BOOL convert_to_memory_buffer(WBXMLBuffer *buffer) {
+	if(buffer->is_file == TRUE) {
+		int bytes_read;
+
+		// read entire file into memory of this buffer
+		fseek(buffer->file, 0, SEEK_SET);
+		// // grow_buff(buffer, buffer->file_len +1);
+		// // int bytes_read = fread(buffer->data, 1, buffer->file_len, buffer->file);
+		reserve_buff_size(buffer, _file_size(buffer->file));
+		bytes_read = fread(buffer->data, 1, _file_size(buffer->file), buffer->file);
+		buffer->data[bytes_read] = 0; // terminate string
+		// close file
+		fclose(buffer->file);
+		buffer->file = NULL;
+		buffer->is_file = FALSE;
+	}
+	return TRUE;
+}
+
+WBXML_DECLARE(WB_BOOL) wbxml_buffer_compare_chunk(WBXMLBuffer *buff1, WB_ULONG pos1, WBXMLBuffer *buff2, WB_ULONG pos2, WB_ULONG len) {
+	if ((buff1 == NULL) || (buff2 == NULL)) {
+		return FALSE;
+	}
+	if(len <= 0) return FALSE; // ? undefined ?
+
+	// check for boundaries
+	if( wbxml_buffer_len(buff1) - pos1 < len ) return FALSE;
+	if( wbxml_buffer_len(buff2) - pos2 < len ) return FALSE;
+
+	if( buff1->is_file == TRUE || buff2->is_file == TRUE ) {
+		// compare in chunks
+		unsigned int processed_len = 0;
+		unsigned char chunk1[COMPARE_BUFFER_SIZE], chunk2[COMPARE_BUFFER_SIZE];
+		while (processed_len < len) {
+			int left = len - processed_len;
+			int chunksize_to_take = MIN(left, COMPARE_BUFFER_SIZE);
+			if(    FALSE == wbxml_buffer_get_chunk(chunk1, buff1, pos1 + processed_len, chunksize_to_take) 
+				|| FALSE == wbxml_buffer_get_chunk(chunk2, buff2, pos2 + processed_len, chunksize_to_take) ) {
+					printf("\nERROR: wbxml_buffer_compare_chunk::wbxml_buffer_get_chunk << FALSE\n");
+					return FALSE;
+			}
+			// compare chunks
+			if(memcmp(chunk1, chunk2, chunksize_to_take) != 0) return FALSE;
+			processed_len += chunksize_to_take;
+		}
+		return TRUE;
+	} else {
+		return memcmp(buff1->data + pos1, buff2->data + pos2, len) == 0 ? TRUE : FALSE;
+	}
+
+}
+
+
 WBXML_DECLARE(WB_LONG) wbxml_buffer_compare_cstr(WBXMLBuffer *buff, const WB_TINY *str)
 {
     WB_LONG ret = 0, len = 0;
@@ -517,16 +776,41 @@ WBXML_DECLARE(WB_BOOL) wbxml_buffer_search_char(WBXMLBuffer *to, WB_UTINY ch, WB
     if (to == NULL)
         return FALSE;
 
-    if (pos >= to->len)
-        return FALSE;
+	if (pos >= wbxml_buffer_len(to))
+		return FALSE;
 
-    if ((p = (WB_UTINY *) memchr(to->data + pos, ch, to->len - pos)) == NULL)
-        return FALSE;
+	if(to->is_file == TRUE) {
+		WB_ULONG start_of_search_chunk = pos;
+		WB_UTINY * found_char_pointer = NULL;
 
-    if (result != NULL)
-        *result = p - to->data;
+		while(start_of_search_chunk < wbxml_buffer_len(to)) {
+			size_t   bytes_read;
+			WB_ULONG left = wbxml_buffer_len(to) - start_of_search_chunk;
+			int      to_read = MIN(SEARCH_BUFFER_SIZE, left);
+			WB_UTINY search_buffer[SEARCH_BUFFER_SIZE];
+			
+			fseek(to->file, start_of_search_chunk, SEEK_SET);
+			bytes_read = fread(search_buffer, 1, to_read, to->file);
+			found_char_pointer = (WB_UTINY *) memchr(search_buffer, ch, bytes_read);
+			if(found_char_pointer != NULL) {
+				int offset = found_char_pointer - search_buffer;
+				*result = start_of_search_chunk + offset;
+				return TRUE;
+			}
+			// char not found in this chunk
+			start_of_search_chunk += bytes_read;
+		}
+		return FALSE;
+	} else {
+		// we know that buffer is in memory so we can use buffer structure internals here.
+		if ((p = (WB_UTINY *) memchr(to->data + pos, ch, to->len - pos)) == NULL)
+			return FALSE;
 
-    return TRUE;
+		if (result != NULL)
+			*result = p - to->data;
+
+		return TRUE;
+	}
 }
 
 
@@ -541,28 +825,41 @@ WBXML_DECLARE(WB_BOOL) wbxml_buffer_search(WBXMLBuffer *to, WBXMLBuffer *search,
         *result = 0;
 
     /* Always "find" an empty string */
-    if (search->len == 0)
+// //	if (search->len == 0)
+    if (wbxml_buffer_len(search) == 0) {
+		*result = pos;
         return TRUE;
+	}
 
     /* Check if 'search' is greater than 'to' */
-    if (search->len > to->len)
+    if (wbxml_buffer_len(search) > wbxml_buffer_len(to))
         return FALSE;
 
     /* We are searching for one char */
-    if (search->len == 1)
-        return wbxml_buffer_search_char(to, search->data[0], pos, result);
+    if (wbxml_buffer_len(search) == 1) {
+		unsigned char search_char = 0;
+		wbxml_buffer_get_char(search, 0, &search_char); // not checking result status because of same check above.
+		// // return wbxml_buffer_search_char(to, search->data[0], pos, result);
+        return wbxml_buffer_search_char(to, search_char, pos, result);
+	}
 
     /* For each occurrence of search's first character in to, then check if the rest of needle follows.
      * Stop if there are no more occurrences, or if the rest of 'search' can't possibly fit in 'to'. */
     first = search->data[0];
     while ((wbxml_buffer_search_char(to, first, pos, &pos)) && 
-           (to->len - pos >= search->len)) 
+           (wbxml_buffer_len(to) - pos >= wbxml_buffer_len(search))) 
     {
-        if (memcmp(to->data + pos, search->data, search->len) == 0) {
-            if (result != NULL)
-                *result = pos;
-            return TRUE;
-        }
+		if (TRUE == wbxml_buffer_compare_chunk(to, pos, search, 0, wbxml_buffer_len(search))) {
+			if (result != NULL) {
+				*result = pos;
+			}
+			return TRUE;
+		}
+        // // if (memcmp(to->data + pos, search->data, search->len) == 0) {
+        // //     if (result != NULL)
+        // //         *result = pos;
+        // //     return TRUE;
+        // // }
         pos++;
     }
 
@@ -652,7 +949,7 @@ WBXML_DECLARE(void) wbxml_buffer_hex_to_binary(WBXMLBuffer *buffer)
     }
 
     /* De-hexing will compress data by factor of 2 */
-    len = buffer->len / 2;
+    len = wbxml_buffer_len(buffer) / 2;
 
     for (i = 0; i < len; i++)
         buffer->data[i] = (WB_UTINY) (buffer->data[i * 2] * 16 | buffer->data[i * 2 + 1]);
@@ -666,6 +963,11 @@ WBXML_DECLARE(WB_BOOL) wbxml_buffer_binary_to_hex(WBXMLBuffer *buffer, WB_BOOL u
 {
     WB_UTINY *hexits = NULL;
     WB_LONG i = 0;
+
+	if( convert_to_memory_buffer(buffer) == FALSE ) {
+		printf("\nERROR: wbxml_buffer_binary_to_hex::convert_to_memory_buffer << FALSE \n");
+		return FALSE;
+	}
 
     if ((buffer == NULL) || buffer->is_static)
         return FALSE;
@@ -782,6 +1084,8 @@ static WB_BOOL grow_buff(WBXMLBuffer *buffer, WB_ULONG size)
 {
     if ((buffer == NULL) || buffer->is_static)
         return FALSE;
+
+	if(buffer->is_file == TRUE) return TRUE;
         
     /* Make room for the invisible terminating NUL */
     size++; 
@@ -798,6 +1102,23 @@ static WB_BOOL grow_buff(WBXMLBuffer *buffer, WB_ULONG size)
     }
 
     return TRUE;
+}
+/**
+ * @brief Add space if needed for specified total-size
+ * @param buffer The buffer
+ * @param size The size to add
+ * @return TRUE is space successfully reserved, FALSE is size was negative, buffer was NULL or if not enough memory
+ * @warning This function is always used for memory storage of buffer, even in case of file sorage buffer.
+ */
+static WB_BOOL reserve_buff_size(WBXMLBuffer *buffer, WB_ULONG total_size) {
+	total_size++; // just in case you forgot to include terminating zero.
+	if (total_size > buffer->malloced) {
+		if ((buffer->malloced * 2) < total_size) buffer->malloced = total_size;
+		else buffer->malloced *= 2;
+		buffer->data = (WB_UTINY *) wbxml_realloc(buffer->data, buffer->malloced);
+		if (buffer->data == NULL) return FALSE;
+	}
+	return TRUE;
 }
 
 
