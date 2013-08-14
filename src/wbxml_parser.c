@@ -2109,31 +2109,47 @@ static WBXMLError parse_attr_value(WBXMLParser  *parser,
 }
 
 
+//
+// String has its length, but parser shall advance its position to length + terminator length {1,2}
+// 
+enum TerminatedStringStatus {
+	TERMSTRING_OK,
+	TERMSTRING_ERROR
+};
+struct TerminatedStringInfo {
+	enum TerminatedStringStatus status;
+	WB_ULONG len;
+	WB_ULONG terminator_len;
+};
 static const int SEARCH_BUFFER_SIZE = 4096;
-WB_ULONG _find_null_terminated_string_len(WBXMLBuffer * input, WB_ULONG pos, WBXMLCharsetMIBEnum charset) {
-	int           terminator_size = 1;
+struct TerminatedStringInfo _find_null_terminated_string_len(WBXMLBuffer * input, WB_ULONG pos, WBXMLCharsetMIBEnum charset) {
 	WBXMLBuffer * terminator;
 	WB_BOOL       status;
 	WB_ULONG      terminator_pos = 0;
+	struct TerminatedStringInfo ret;
 
 	if(charset == WBXML_CHARSET_ISO_10646_UCS_2 || charset == WBXML_CHARSET_UTF_16) {
 		// Terminated by two NULL char ("\0\0")
-		terminator_size = 2;
+		ret.terminator_len = 2;
 	} else {
 		// Terminated by a simple NULL char ('\0')
-		terminator_size = 1;
+		ret.terminator_len = 1;
 	}
-	terminator = wbxml_buffer_sta_create("\0\0", terminator_size);
+	terminator = wbxml_buffer_sta_create("\0\0", ret.terminator_len);
 
 	status = wbxml_buffer_search(input, terminator, pos, &terminator_pos);
 	if(status == TRUE) {
 		// terminator_pos
-		return terminator_pos - pos + terminator_size;
+		// // return terminator_pos - pos + ret.terminator_len;
+		ret.len = terminator_pos - pos;
+		ret.status = TERMSTRING_OK;
 	} else {
 		// No terminating string
 		printf("\nERROR: _find_null_terminated_string_len::wbxml_buffer_search << FALSE \n");
-		return -1;
+		ret.status = TERMSTRING_ERROR;
+		ret.len = 0;
 	}
+	return ret;
 }
 
 /**
@@ -2146,24 +2162,24 @@ WB_ULONG _find_null_terminated_string_len(WBXMLBuffer * input, WB_ULONG pos, WBX
 static WBXMLError parse_termstr(WBXMLParser  *parser,
                                 WBXMLBuffer **result)
 {
-    WB_ULONG   string_len  = 0;
     WBXMLError ret      = WBXML_OK;
-  
+	struct TerminatedStringInfo string_len;
 	string_len = _find_null_terminated_string_len(parser->wbxml, parser->pos, parser->charset);
-	WBXML_DEBUG((WBXML_PARSER, "(%d) Parsing termstr len:%d ", parser->pos, string_len));
-	if(string_len == -1) {
+
+	WBXML_DEBUG((WBXML_PARSER, "(%d) Parsing termstr len:%d ", parser->pos, string_len.len));
+	if(string_len.status == TERMSTRING_ERROR) {
 		return WBXML_ERROR_CHARSET_STR_LEN;
 	}
 	if(parser->content_hdl->specify_filename_clb != NULL) {
 		const char * path = parser->content_hdl->specify_filename_clb(parser->user_data);
-		*result = wbxml_buffer_extract_file_subbuffer(parser->wbxml, parser->pos, string_len, path, "w+b");
+		*result = wbxml_buffer_extract_file_subbuffer(parser->wbxml, parser->pos, string_len.len, path, "w+b");
 		if(parser->content_hdl->free_filename_clb != NULL) {
 			parser->content_hdl->free_filename_clb(parser->user_data, path);
 		}
 	} else {
-		*result = wbxml_buffer_extract_memory_subbuffer(parser->wbxml, parser->pos, string_len);
+		*result = wbxml_buffer_extract_memory_subbuffer(parser->wbxml, parser->pos, string_len.len);
 	}
-	parser->pos += string_len;
+	parser->pos += string_len.len + string_len.terminator_len;
 	if (*result == NULL) {
 		return WBXML_ERROR_NOT_ENOUGH_MEMORY;
 	}
@@ -2263,7 +2279,7 @@ static WBXMLError get_strtbl_reference(WBXMLParser  *parser,
                                        WB_ULONG      index,
                                        WBXMLBuffer **result)
 {
-	WB_ULONG   string_len  = 0;
+	struct TerminatedStringInfo string_len;
     //WB_ULONG   max_len = 0;
     WBXMLError ret     = WBXML_OK;
 
@@ -2304,19 +2320,19 @@ static WBXMLError get_strtbl_reference(WBXMLParser  *parser,
 
 	string_len = _find_null_terminated_string_len(parser->strstbl, index, parser->charset);
 	WBXML_DEBUG((WBXML_PARSER, "(%d) String Table Reference:%d ", parser->pos, index));
-	if(string_len == -1) {
+	if(string_len.status == TERMSTRING_ERROR) {
 		return WBXML_ERROR_CHARSET_STR_LEN;
 	}
 	if(parser->content_hdl->specify_filename_clb != NULL) {
 		const char * path = parser->content_hdl->specify_filename_clb(parser->user_data);
-		*result = wbxml_buffer_extract_file_subbuffer(parser->strstbl, index, string_len, path, "w+b");
+		*result = wbxml_buffer_extract_file_subbuffer(parser->strstbl, index, string_len.len, path, "w+b");
 		if(parser->content_hdl->free_filename_clb != NULL) {
 			parser->content_hdl->free_filename_clb(parser->user_data, path);
 		}
 	} else {
-		*result = wbxml_buffer_extract_memory_subbuffer(parser->strstbl, index, string_len);
+		*result = wbxml_buffer_extract_memory_subbuffer(parser->strstbl, index, string_len.len);
 	}
-	parser->pos += string_len;
+	parser->pos += string_len.len + string_len.terminator_len;
 	if (*result == NULL) {
 		return WBXML_ERROR_NOT_ENOUGH_MEMORY;
 	}
